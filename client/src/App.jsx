@@ -431,7 +431,8 @@ function App() {
   const getImageUrl = (path, size = 'w500') => {
     if (!path) return 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500';
     if (path.startsWith('http')) return path;
-    return `https://image.tmdb.org/t/p/${size}${path}`;
+    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+    return `${BACKEND_URL}/api/images/${size}/${cleanPath}`;
   };
 
   const handleLogoClick = () => {

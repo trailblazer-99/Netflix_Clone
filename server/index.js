@@ -140,6 +140,35 @@ app.get('/api/media/:type/:id/videos', async (req, res) => {
   }
 });
 
+// Proxy endpoint for images to bypass ISP blocks in certain regions (like India)
+app.get('/api/images/:size/*', async (req, res) => {
+  const { size } = req.params;
+  const imagePath = req.params[0];
+
+  if (!imagePath) {
+    return res.status(400).json({ error: 'Image path is required' });
+  }
+
+  const url = `https://image.tmdb.org/t/p/${size}/${imagePath}`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return res.status(response.status).send('Failed to fetch image');
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24h
+
+    const arrayBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error('Image proxy error:', err);
+    res.status(500).send('Error fetching image');
+  }
+});
+
 // Fallback static files serving / error route
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
