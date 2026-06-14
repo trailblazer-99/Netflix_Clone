@@ -1,6 +1,6 @@
-# Netflix Clone with Dynamic Streaming Links (Vercel & Render)
+# Flixin - Movie Catalog with Dynamic Streaming Links (Vercel & Render)
 
-A high-fidelity Netflix Clone built with a React (Vite) frontend and an Express (Node.js) backend. This application pulls movie metadata from The Movie Database (TMDB) and resolves regional watch providers to link titles directly to their respective streaming platforms (Netflix, Disney+, Prime Video, etc.).
+A high-fidelity Flixin movie catalog web application built with a React (Vite) frontend and an Express (Node.js) backend. This application pulls movie metadata from The Movie Database (TMDB) and resolves regional watch providers to link titles directly to their respective streaming platforms (Netflix, Disney+, Prime Video, etc.).
 
 ---
 
@@ -57,7 +57,7 @@ A high-fidelity Netflix Clone built with a React (Vite) frontend and an Express 
    ```bash
    git init
    git add .
-   git commit -m "Initial commit of Netflix Clone Monorepo"
+   git commit -m "Initial commit of Flixin Monorepo"
    ```
 2. Create a new repository on GitHub.
 3. Link and push your project to GitHub:
@@ -74,7 +74,7 @@ A high-fidelity Netflix Clone built with a React (Vite) frontend and an Express 
 2. Click **New +** and select **Web Service**.
 3. Connect your GitHub repository.
 4. Set the following configurations:
-   - **Name**: `netflix-clone-api`
+   - **Name**: `flixin-api`
    - **Root Directory**: `server`
    - **Runtime**: `Node`
    - **Build Command**: `npm install`
@@ -82,7 +82,7 @@ A high-fidelity Netflix Clone built with a React (Vite) frontend and an Express 
 5. Scroll down to **Environment Variables** and add:
    - Key: `TMDB_API_KEY` | Value: *[Your actual TMDB key/token]*
 6. Click **Deploy Web Service**.
-7. Copy the generated Web Service URL (e.g., `https://netflix-clone-api.onrender.com`).
+7. Copy the generated Web Service URL (e.g., `https://flixin-api.onrender.com`).
 
 ---
 

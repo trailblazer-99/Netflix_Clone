@@ -1,12 +1,12 @@
 :root {
-  --netflix-red: #e50914;
+  --flixin-red: #e50914;
   --dark-bg: #141414;
   --dark-gray: #181818;
   --card-hover-bg: #2f2f2f;
   --text-color: #ffffff;
   --text-muted: #999999;
   --border-color: #333333;
-  --sans-serif: 'Netflix Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --sans-serif: 'Flixin Sans', 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 * {
@@ -24,7 +24,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Custom Netflix-style scrollbars */
+/* Custom Flixin-style scrollbars */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

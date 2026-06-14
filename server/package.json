@@ -1,7 +1,7 @@
 {
-  "name": "netflix-clone-server",
+  "name": "flixin-server",
   "version": "1.0.0",
-  "description": "Secure TMDB API proxy server for Netflix Clone",
+  "description": "Secure TMDB API proxy server for Flixin",
   "main": "index.js",
   "type": "module",
   "scripts": {

@@ -1,4 +1,4 @@
-/* App.css - Netflix Clone Design System and Layout Styles */
+/* App.css - Flixin Design System and Layout Styles */
 
 /* Core Variables & Keyframes */
 @keyframes fadeIn {
@@ -52,7 +52,7 @@
 }
 
 .nav-logo {
-  color: var(--netflix-red);
+  color: var(--flixin-red);
   font-size: 26px;
   font-weight: 900;
   letter-spacing: -1.5px;
@@ -702,7 +702,7 @@
 
 .provider-link:hover {
   background-color: #2d2d2d;
-  border-color: var(--netflix-red);
+  border-color: var(--flixin-red);
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(229, 9, 20, 0.2);
 }
@@ -796,7 +796,7 @@
 }
 
 .form-input:focus, .form-select:focus {
-  border-color: var(--netflix-red);
+  border-color: var(--flixin-red);
 }
 
 .form-input::placeholder {
@@ -834,7 +834,7 @@
 }
 
 .btn-save {
-  background-color: var(--netflix-red);
+  background-color: var(--flixin-red);
   color: #ffffff;
   padding: 10px 24px;
   font-weight: 700;
@@ -937,6 +937,6 @@
 }
 
 .credits-highlight {
-  color: var(--netflix-red);
+  color: var(--flixin-red);
   font-weight: 600;
 }

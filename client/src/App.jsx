@@ -66,7 +66,7 @@ const fetchFromBackendProxy = async (endpoint, unused_key, params = {}) => {
 function App() {
   // --- States ---
   const [isLiveMode, setIsLiveMode] = useState(false);
-  const [region, setRegion] = useState(() => localStorage.getItem('netflix_region') || 'US');
+  const [region, setRegion] = useState(() => localStorage.getItem('flixin_region') || 'US');
   
   const [activeTab, setActiveTab] = useState('home'); // home | tv | movies | mylist
   const [activeMovie, setActiveMovie] = useState(null);
@@ -79,7 +79,7 @@ function App() {
   const [scrolled, setScrolled] = useState(false);
   const [myList, setMyList] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('netflix_mylist')) || [];
+      return JSON.parse(localStorage.getItem('flixin_mylist')) || [];
     } catch {
       return [];
     }
@@ -116,7 +116,7 @@ function App() {
 
   // --- Save watchlist ---
   useEffect(() => {
-    localStorage.setItem('netflix_mylist', JSON.stringify(myList));
+    localStorage.setItem('flixin_mylist', JSON.stringify(myList));
   }, [myList]);
 
   // --- Check Backend Configuration Status ---
@@ -140,7 +140,7 @@ function App() {
 
   // --- Save region settings ---
   const handleSaveSettings = (reg) => {
-    localStorage.setItem('netflix_region', reg);
+    localStorage.setItem('flixin_region', reg);
     setRegion(reg);
     setShowSettings(false);
     
@@ -478,7 +478,7 @@ function App() {
       <nav className={`navbar ${scrolled ? 'scrolled' : ''}`}>
         <div className="nav-left">
           <div className="nav-logo" onClick={handleLogoClick} style={{ cursor: 'pointer' }}>
-            <span>Netflix</span>
+            <span>Flixin</span>
           </div>
           <ul className="nav-menu">
             <li 
@@ -503,7 +503,7 @@ function App() {
               className={`nav-menu-item ${activeTab === 'mylist' && !searchQuery ? 'active' : ''}`}
               onClick={() => { setActiveTab('mylist'); setSearchQuery(''); }}
             >
-              My List {myList.length > 0 && <span style={{fontSize: '11px', backgroundColor: 'var(--netflix-red)', padding: '2px 6px', borderRadius: '50%', marginLeft: '5px'}}>{myList.length}</span>}
+              My List {myList.length > 0 && <span style={{fontSize: '11px', backgroundColor: 'var(--flixin-red)', padding: '2px 6px', borderRadius: '50%', marginLeft: '5px'}}>{myList.length}</span>}
             </li>
           </ul>
         </div>
@@ -822,7 +822,7 @@ function App() {
                 {/* --- STREAMING SERVICES (WHERE TO WATCH) --- */}
                 <div className="watch-section">
                   <h3 className="watch-section-title">
-                    <Globe size={18} style={{ color: 'var(--netflix-red)' }} />
+                    <Globe size={18} style={{ color: 'var(--flixin-red)' }} />
                     Available to Watch On:
                   </h3>
                   
