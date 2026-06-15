@@ -50,7 +50,6 @@ const fetchFromBackendProxy = async (endpoint, apiKeyToken, params = {}) => {
     url += endpoint;
   }
 
-  // Append query params if any
   const queryParams = new URLSearchParams(params).toString();
   if (queryParams) {
     url += `?${queryParams}`;
@@ -77,6 +76,10 @@ function App() {
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [region, setRegion] = useState(() => localStorage.getItem('flixin_region') || 'US');
   
+  // Backend connection status states
+  const [isBackendOnline, setIsBackendOnline] = useState(false);
+  const [serverConfigured, setServerConfigured] = useState(false);
+
   const [activeTab, setActiveTab] = useState('home'); // home | tv | movies | mylist
   const [activeMovie, setActiveMovie] = useState(null);
   const [playingTrailer, setPlayingTrailer] = useState(null);
@@ -143,15 +146,20 @@ function App() {
           headers['x-tmdb-key'] = apiKey;
         }
         const res = await fetch(`${BACKEND_URL}/api/status`, { headers });
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        if (data.status === 'online' && data.tmdbConfigured) {
-          setIsLiveMode(true);
+        if (res.ok) {
+          const data = await res.json();
+          setIsBackendOnline(true);
+          setServerConfigured(data.tmdbConfigured);
+          setIsLiveMode(data.tmdbConfigured || !!apiKey);
         } else {
-          setIsLiveMode(false);
+          setIsBackendOnline(false);
+          setServerConfigured(false);
+          setIsLiveMode(!!apiKey);
         }
       } catch (err) {
-        setIsLiveMode(false);
+        setIsBackendOnline(false);
+        setServerConfigured(false);
+        setIsLiveMode(!!apiKey);
       }
     };
     checkStatus();
@@ -173,6 +181,41 @@ function App() {
     setVideoCache({});
   };
 
+  // --- Data Fetching Wrapper ---
+  // Connects to proxy server if online, otherwise fetches directly from TMDB in browser
+  const fetchData = async (endpoint, apiKeyToken, params = {}) => {
+    if (isBackendOnline) {
+      return fetchFromBackendProxy(endpoint, apiKeyToken, params);
+    } else if (apiKeyToken) {
+      // Direct TMDB fallback
+      const isV4 = apiKeyToken.length > 50 && apiKeyToken.startsWith('ey');
+      let url = `https://api.themoviedb.org/3${endpoint}`;
+      const headers = {
+        'Content-Type': 'application/json;charset=utf-8'
+      };
+      
+      let queryParams = { ...params };
+      if (isV4) {
+        headers['Authorization'] = `Bearer ${apiKeyToken}`;
+      } else {
+        queryParams.api_key = apiKeyToken;
+      }
+      
+      const searchString = new URLSearchParams(queryParams).toString();
+      if (searchString) {
+        url += `?${searchString}`;
+      }
+      
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        throw new Error(`Direct TMDB responded with status ${res.status}`);
+      }
+      return res.json();
+    } else {
+      throw new Error('No API key and server offline.');
+    }
+  };
+
   // --- Fetch TMDB Data ---
   useEffect(() => {
     if (!isLiveMode) {
@@ -186,23 +229,23 @@ function App() {
       setIsLoading(true);
       try {
         // Fetch Trending
-        const trendingRes = await fetchFromBackendProxy('/trending/all/week', apiKey);
+        const trendingRes = await fetchData('/trending/all/week', apiKey);
         const trending = trendingRes.results || [];
         
         // Fetch Top Rated
-        const topRatedRes = await fetchFromBackendProxy('/movie/top_rated', apiKey);
+        const topRatedRes = await fetchData('/movie/top_rated', apiKey);
         const topRated = topRatedRes.results || [];
 
         // Fetch Action Movies (Genre ID 28)
-        const actionRes = await fetchFromBackendProxy('/discover/movie', apiKey, { with_genres: 28 });
+        const actionRes = await fetchData('/discover/movie', apiKey, { with_genres: 28 });
         const action = actionRes.results || [];
 
         // Fetch Sci-Fi (Genre ID 878)
-        const scifiRes = await fetchFromBackendProxy('/discover/movie', apiKey, { with_genres: 878 });
+        const scifiRes = await fetchData('/discover/movie', apiKey, { with_genres: 878 });
         const scifi = scifiRes.results || [];
 
         // Fetch Drama (Genre ID 18)
-        const dramaRes = await fetchFromBackendProxy('/discover/movie', apiKey, { with_genres: 18 });
+        const dramaRes = await fetchData('/discover/movie', apiKey, { with_genres: 18 });
         const drama = dramaRes.results || [];
 
         setLiveData({
@@ -219,15 +262,15 @@ function App() {
           const featured = trending[randomIndex];
           
           // Get full details to retrieve backdrop, runtimes, etc.
-          const details = await fetchFromBackendProxy(`/${featured.media_type || 'movie'}/${featured.id}`, apiKey);
+          const details = await fetchData(`/${featured.media_type || 'movie'}/${featured.id}`, apiKey);
           const featuredWithDetails = { ...featured, ...details };
           setFeaturedMovie(featuredWithDetails);
 
           // Prefetch watch providers and cast details for the featured banner movie
           const mediaType = featured.media_type || 'movie';
           const [providersRes, credits] = await Promise.all([
-            fetchFromBackendProxy(`/${mediaType}/${featured.id}/watch/providers`, apiKey).catch(() => null),
-            fetchFromBackendProxy(`/${mediaType}/${featured.id}/credits`, apiKey).catch(() => ({ cast: [] }))
+            fetchData(`/${mediaType}/${featured.id}/watch/providers`, apiKey).catch(() => null),
+            fetchData(`/${mediaType}/${featured.id}/credits`, apiKey).catch(() => ({ cast: [] }))
           ]);
 
           if (providersRes) {
@@ -265,7 +308,7 @@ function App() {
     const delayDebounce = setTimeout(async () => {
       if (isLiveMode) {
         try {
-          const res = await fetchFromBackendProxy('/search/multi', apiKey, { query: searchQuery });
+          const res = await fetchData('/search/multi', apiKey, { query: searchQuery });
           const filtered = (res.results || []).filter(item => 
             (item.media_type === 'movie' || item.media_type === 'tv') && item.backdrop_path
           );
@@ -303,9 +346,9 @@ function App() {
 
     try {
       const [details, providersRes, credits] = await Promise.all([
-        fetchFromBackendProxy(`/${mediaType}/${id}`, apiKey),
-        fetchFromBackendProxy(`/${mediaType}/${id}/watch/providers`, apiKey),
-        fetchFromBackendProxy(`/${mediaType}/${id}/credits`, apiKey).catch(() => ({ cast: [] }))
+        fetchData(`/${mediaType}/${id}`, apiKey),
+        fetchData(`/${mediaType}/${id}/watch/providers`, apiKey),
+        fetchData(`/${mediaType}/${id}/credits`, apiKey).catch(() => ({ cast: [] }))
       ]);
 
       setMovieDetails({ ...movie, ...details });
@@ -341,7 +384,7 @@ function App() {
 
     const mediaType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
     try {
-      const videoRes = await fetchFromBackendProxy(`/${mediaType}/${movie.id}/videos`, apiKey);
+      const videoRes = await fetchData(`/${mediaType}/${movie.id}/videos`, apiKey);
       const videos = videoRes.results || [];
       const trailer = videos.find(v => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')) || videos[0];
       
@@ -406,7 +449,7 @@ function App() {
         } else {
           try {
             const mediaType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
-            const videoRes = await fetchFromBackendProxy(`/${mediaType}/${movie.id}/videos`, apiKey);
+            const videoRes = await fetchData(`/${mediaType}/${movie.id}/videos`, apiKey);
             const videos = videoRes.results || [];
             const trailer = videos.find(v => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')) || videos[0];
             
@@ -508,18 +551,36 @@ function App() {
     }
   };
 
+  // --- Image URL Resolver with Fallback Proxy ---
   const getImageUrl = (path, size = 'w500') => {
     if (!path) return 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500';
     if (path.startsWith('http')) return path;
     const cleanPath = path.startsWith('/') ? path.slice(1) : path;
     
-    // Only proxy images through our backend in Live mode (when the server is fully configured)
-    if (isLiveMode) {
+    // Default to proxy if backend is online, otherwise direct TMDB CDN URL
+    if (isBackendOnline) {
       return `${BACKEND_URL}/api/images/${size}/${cleanPath}`;
     }
-    
-    // Direct TMDB CDN URL in Demo Mode so the frontend can load standalone
     return `https://image.tmdb.org/t/p/${size}/${cleanPath}`;
+  };
+
+  // --- Handlers for Image Load Error ---
+  const handleImgError = (e, path, size = 'w500') => {
+    if (!path) {
+      e.target.src = 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500';
+      return;
+    }
+    
+    const currentSrc = e.target.src;
+    const directUrl = `https://image.tmdb.org/t/p/${size}/${path.startsWith('/') ? path.slice(1) : path}`;
+    
+    // If it failed while trying the backend proxy, try the direct TMDB CDN URL
+    if (currentSrc !== directUrl) {
+      e.target.src = directUrl;
+    } else {
+      // If direct CDN also fails (due to DNS blocks), swap to Unsplash mockup poster
+      e.target.src = 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=500';
+    }
   };
 
   const handleLogoClick = () => {
@@ -662,7 +723,11 @@ function App() {
                       ></iframe>
                     </div>
                   ) : (
-                    <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                    <img 
+                      src={getImageUrl(movie.backdrop_path || movie.poster_path)} 
+                      alt={movie.title || movie.name} 
+                      onError={(e) => handleImgError(e, movie.backdrop_path || movie.poster_path, 'w500')}
+                    />
                   )}
                   <div className="card-overlay">
                     <p className="card-title">{movie.title || movie.name}</p>
@@ -702,7 +767,11 @@ function App() {
                       ></iframe>
                     </div>
                   ) : (
-                    <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                    <img 
+                      src={getImageUrl(movie.backdrop_path || movie.poster_path)} 
+                      alt={movie.title || movie.name} 
+                      onError={(e) => handleImgError(e, movie.backdrop_path || movie.poster_path, 'w500')}
+                    />
                   )}
                   <div className="card-overlay">
                     <p className="card-title">{movie.title || movie.name}</p>
@@ -748,7 +817,11 @@ function App() {
                       ></iframe>
                     </div>
                   ) : (
-                    <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                    <img 
+                      src={getImageUrl(movie.backdrop_path || movie.poster_path)} 
+                      alt={movie.title || movie.name} 
+                      onError={(e) => handleImgError(e, movie.backdrop_path || movie.poster_path, 'w500')}
+                    />
                   )}
                   <div className="card-overlay">
                     <p className="card-title">{movie.title || movie.name}</p>
@@ -859,7 +932,11 @@ function App() {
                               ></iframe>
                             </div>
                           ) : (
-                            <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                            <img 
+                              src={getImageUrl(movie.backdrop_path || movie.poster_path)} 
+                              alt={movie.title || movie.name} 
+                              onError={(e) => handleImgError(e, movie.backdrop_path || movie.poster_path, 'w500')}
+                            />
                           )}
                           <div className="card-overlay">
                             <p className="card-title">{movie.title || movie.name}</p>
