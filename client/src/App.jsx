@@ -23,7 +23,7 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 // Helper to make requests to our Express proxy server.
 // Automatically routes standard TMDB paths to Express endpoints.
-const fetchFromBackendProxy = async (endpoint, unused_key, params = {}) => {
+const fetchFromBackendProxy = async (endpoint, apiKeyToken, params = {}) => {
   let url = `${BACKEND_URL}/api`;
   
   if (endpoint === '/trending/all/week') {
@@ -56,7 +56,14 @@ const fetchFromBackendProxy = async (endpoint, unused_key, params = {}) => {
     url += `?${queryParams}`;
   }
 
-  const response = await fetch(url);
+  const headers = {
+    'Content-Type': 'application/json;charset=utf-8'
+  };
+  if (apiKeyToken) {
+    headers['x-tmdb-key'] = apiKeyToken;
+  }
+
+  const response = await fetch(url, { headers });
   if (!response.ok) {
     throw new Error(`Server responded with error status ${response.status}`);
   }
@@ -65,6 +72,8 @@ const fetchFromBackendProxy = async (endpoint, unused_key, params = {}) => {
 
 function App() {
   // --- States ---
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('flixin_api_key') || '');
+  const [tempApiKey, setTempApiKey] = useState(apiKey);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [region, setRegion] = useState(() => localStorage.getItem('flixin_region') || 'US');
   
@@ -99,6 +108,12 @@ function App() {
   const [movieDetails, setMovieDetails] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
+  // Hover preview states
+  const [hoveredMovieId, setHoveredMovieId] = useState(null);
+  const [hoveredVideoUrl, setHoveredVideoUrl] = useState(null);
+  const [videoCache, setVideoCache] = useState({});
+  const hoverTimeoutRef = useRef(null);
+
   const searchInputRef = useRef(null);
 
   // --- Scroll Effect ---
@@ -123,7 +138,11 @@ function App() {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/status`);
+        const headers = {};
+        if (apiKey) {
+          headers['x-tmdb-key'] = apiKey;
+        }
+        const res = await fetch(`${BACKEND_URL}/api/status`, { headers });
         if (!res.ok) throw new Error();
         const data = await res.json();
         if (data.status === 'online' && data.tmdbConfigured) {
@@ -136,11 +155,13 @@ function App() {
       }
     };
     checkStatus();
-  }, [region]);
+  }, [apiKey, region]);
 
-  // --- Save region settings ---
-  const handleSaveSettings = (reg) => {
+  // --- Save region & key settings ---
+  const handleSaveSettings = (key, reg) => {
+    localStorage.setItem('flixin_api_key', key);
     localStorage.setItem('flixin_region', reg);
+    setApiKey(key);
     setRegion(reg);
     setShowSettings(false);
     
@@ -149,6 +170,7 @@ function App() {
     setFeaturedMovie(null);
     setMovieProviders({});
     setMovieCredits({});
+    setVideoCache({});
   };
 
   // --- Fetch TMDB Data ---
@@ -164,23 +186,23 @@ function App() {
       setIsLoading(true);
       try {
         // Fetch Trending
-        const trendingRes = await fetchFromBackendProxy('/trending/all/week');
+        const trendingRes = await fetchFromBackendProxy('/trending/all/week', apiKey);
         const trending = trendingRes.results || [];
         
         // Fetch Top Rated
-        const topRatedRes = await fetchFromBackendProxy('/movie/top_rated');
+        const topRatedRes = await fetchFromBackendProxy('/movie/top_rated', apiKey);
         const topRated = topRatedRes.results || [];
 
         // Fetch Action Movies (Genre ID 28)
-        const actionRes = await fetchFromBackendProxy('/discover/movie', null, { with_genres: 28 });
+        const actionRes = await fetchFromBackendProxy('/discover/movie', apiKey, { with_genres: 28 });
         const action = actionRes.results || [];
 
         // Fetch Sci-Fi (Genre ID 878)
-        const scifiRes = await fetchFromBackendProxy('/discover/movie', null, { with_genres: 878 });
+        const scifiRes = await fetchFromBackendProxy('/discover/movie', apiKey, { with_genres: 878 });
         const scifi = scifiRes.results || [];
 
         // Fetch Drama (Genre ID 18)
-        const dramaRes = await fetchFromBackendProxy('/discover/movie', null, { with_genres: 18 });
+        const dramaRes = await fetchFromBackendProxy('/discover/movie', apiKey, { with_genres: 18 });
         const drama = dramaRes.results || [];
 
         setLiveData({
@@ -197,15 +219,15 @@ function App() {
           const featured = trending[randomIndex];
           
           // Get full details to retrieve backdrop, runtimes, etc.
-          const details = await fetchFromBackendProxy(`/${featured.media_type || 'movie'}/${featured.id}`);
+          const details = await fetchFromBackendProxy(`/${featured.media_type || 'movie'}/${featured.id}`, apiKey);
           const featuredWithDetails = { ...featured, ...details };
           setFeaturedMovie(featuredWithDetails);
 
           // Prefetch watch providers and cast details for the featured banner movie
           const mediaType = featured.media_type || 'movie';
           const [providersRes, credits] = await Promise.all([
-            fetchFromBackendProxy(`/${mediaType}/${featured.id}/watch/providers`).catch(() => null),
-            fetchFromBackendProxy(`/${mediaType}/${featured.id}/credits`).catch(() => ({ cast: [] }))
+            fetchFromBackendProxy(`/${mediaType}/${featured.id}/watch/providers`, apiKey).catch(() => null),
+            fetchFromBackendProxy(`/${mediaType}/${featured.id}/credits`, apiKey).catch(() => ({ cast: [] }))
           ]);
 
           if (providersRes) {
@@ -231,7 +253,7 @@ function App() {
     };
 
     loadBackendData();
-  }, [isLiveMode, region]);
+  }, [isLiveMode, region, apiKey]);
 
   // --- Search ---
   useEffect(() => {
@@ -243,7 +265,7 @@ function App() {
     const delayDebounce = setTimeout(async () => {
       if (isLiveMode) {
         try {
-          const res = await fetchFromBackendProxy('/search/multi', null, { query: searchQuery });
+          const res = await fetchFromBackendProxy('/search/multi', apiKey, { query: searchQuery });
           const filtered = (res.results || []).filter(item => 
             (item.media_type === 'movie' || item.media_type === 'tv') && item.backdrop_path
           );
@@ -265,7 +287,7 @@ function App() {
     }, 500);
 
     return () => clearTimeout(delayDebounce);
-  }, [searchQuery, isLiveMode]);
+  }, [searchQuery, isLiveMode, apiKey]);
 
   // --- Fetch Additional Details (Modal) ---
   const handleOpenModal = async (movie) => {
@@ -281,9 +303,9 @@ function App() {
 
     try {
       const [details, providersRes, credits] = await Promise.all([
-        fetchFromBackendProxy(`/${mediaType}/${id}`),
-        fetchFromBackendProxy(`/${mediaType}/${id}/watch/providers`),
-        fetchFromBackendProxy(`/${mediaType}/${id}/credits`).catch(() => ({ cast: [] }))
+        fetchFromBackendProxy(`/${mediaType}/${id}`, apiKey),
+        fetchFromBackendProxy(`/${mediaType}/${id}/watch/providers`, apiKey),
+        fetchFromBackendProxy(`/${mediaType}/${id}/credits`, apiKey).catch(() => ({ cast: [] }))
       ]);
 
       setMovieDetails({ ...movie, ...details });
@@ -319,7 +341,7 @@ function App() {
 
     const mediaType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
     try {
-      const videoRes = await fetchFromBackendProxy(`/${mediaType}/${movie.id}/videos`);
+      const videoRes = await fetchFromBackendProxy(`/${mediaType}/${movie.id}/videos`, apiKey);
       const videos = videoRes.results || [];
       const trailer = videos.find(v => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')) || videos[0];
       
@@ -362,6 +384,64 @@ function App() {
       };
     }
     return null;
+  };
+
+  // --- Hover Video Previews handlers ---
+  const handleMouseEnterCard = (movie) => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    
+    hoverTimeoutRef.current = setTimeout(async () => {
+      setHoveredMovieId(movie.id);
+      
+      let trailerEmbed = '';
+      if (!isLiveMode) {
+        if (movie.trailer_url) {
+          trailerEmbed = movie.trailer_url;
+        } else {
+          trailerEmbed = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent((movie.title || movie.name) + " trailer")}`;
+        }
+      } else {
+        if (videoCache[movie.id]) {
+          trailerEmbed = videoCache[movie.id];
+        } else {
+          try {
+            const mediaType = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
+            const videoRes = await fetchFromBackendProxy(`/${mediaType}/${movie.id}/videos`, apiKey);
+            const videos = videoRes.results || [];
+            const trailer = videos.find(v => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')) || videos[0];
+            
+            let embedUrl = '';
+            if (trailer) {
+              embedUrl = `https://www.youtube.com/embed/${trailer.key}`;
+            } else {
+              embedUrl = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent((movie.title || movie.name) + " trailer")}`;
+            }
+            setVideoCache(prev => ({ ...prev, [movie.id]: embedUrl }));
+            trailerEmbed = embedUrl;
+          } catch (err) {
+            console.error("Error fetching preview trailer:", err);
+            trailerEmbed = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent((movie.title || movie.name) + " trailer")}`;
+          }
+        }
+      }
+
+      // Add flags for muted looping autoplay
+      let formattedUrl = '';
+      if (trailerEmbed.includes('youtube.com/embed/')) {
+        const parts = trailerEmbed.split('youtube.com/embed/');
+        const videoId = parts[1]?.split('?')[0]?.split('/')[0];
+        formattedUrl = `${trailerEmbed.split('?')[0]}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoId}&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3`;
+      } else {
+        formattedUrl = `${trailerEmbed}&autoplay=1&mute=1&controls=0&loop=1`;
+      }
+      setHoveredVideoUrl(formattedUrl);
+    }, 800); // 800ms hover delay
+  };
+
+  const handleMouseLeaveCard = () => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    setHoveredMovieId(null);
+    setHoveredVideoUrl(null);
   };
 
   // --- Watchlist Functions ---
@@ -438,7 +518,7 @@ function App() {
       return `${BACKEND_URL}/api/images/${size}/${cleanPath}`;
     }
     
-    // Direct TMDB CDN URL in Demo Mode so the frontend can load standalone without local server issues
+    // Direct TMDB CDN URL in Demo Mode so the frontend can load standalone
     return `https://image.tmdb.org/t/p/${size}/${cleanPath}`;
   };
 
@@ -540,11 +620,10 @@ function App() {
             />
           </div>
 
-          <span className={`api-badge ${isLiveMode ? '' : 'demo'}`}>
-            {isLiveMode ? `Live (${region})` : 'Demo'}
-          </span>
-
-          <button className="nav-icon-btn" title="Settings" onClick={() => setShowSettings(true)}>
+          <button className="nav-icon-btn" title="Settings" onClick={() => {
+            setTempApiKey(apiKey);
+            setShowSettings(true);
+          }}>
             <Settings size={20} />
           </button>
           
@@ -570,8 +649,21 @@ function App() {
                   key={movie.id} 
                   className="row-poster-card" 
                   onClick={() => handleOpenModal(movie)}
+                  onMouseEnter={() => handleMouseEnterCard(movie)}
+                  onMouseLeave={handleMouseLeaveCard}
                 >
-                  <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                  {hoveredMovieId === movie.id && hoveredVideoUrl ? (
+                    <div className="card-preview-video">
+                      <iframe 
+                        src={hoveredVideoUrl} 
+                        title="preview"
+                        allow="autoplay; encrypted-media"
+                        frameBorder="0"
+                      ></iframe>
+                    </div>
+                  ) : (
+                    <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                  )}
                   <div className="card-overlay">
                     <p className="card-title">{movie.title || movie.name}</p>
                     <div className="card-meta">
@@ -597,8 +689,21 @@ function App() {
                   key={movie.id} 
                   className="row-poster-card" 
                   onClick={() => handleOpenModal(movie)}
+                  onMouseEnter={() => handleMouseEnterCard(movie)}
+                  onMouseLeave={handleMouseLeaveCard}
                 >
-                  <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                  {hoveredMovieId === movie.id && hoveredVideoUrl ? (
+                    <div className="card-preview-video">
+                      <iframe 
+                        src={hoveredVideoUrl} 
+                        title="preview"
+                        allow="autoplay; encrypted-media"
+                        frameBorder="0"
+                      ></iframe>
+                    </div>
+                  ) : (
+                    <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                  )}
                   <div className="card-overlay">
                     <p className="card-title">{movie.title || movie.name}</p>
                     <div className="card-meta">
@@ -630,8 +735,21 @@ function App() {
                   key={movie.id} 
                   className="row-poster-card" 
                   onClick={() => handleOpenModal(movie)}
+                  onMouseEnter={() => handleMouseEnterCard(movie)}
+                  onMouseLeave={handleMouseLeaveCard}
                 >
-                  <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                  {hoveredMovieId === movie.id && hoveredVideoUrl ? (
+                    <div className="card-preview-video">
+                      <iframe 
+                        src={hoveredVideoUrl} 
+                        title="preview"
+                        allow="autoplay; encrypted-media"
+                        frameBorder="0"
+                      ></iframe>
+                    </div>
+                  ) : (
+                    <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                  )}
                   <div className="card-overlay">
                     <p className="card-title">{movie.title || movie.name}</p>
                     <div className="card-meta">
@@ -728,8 +846,21 @@ function App() {
                           key={movie.id} 
                           className="row-poster-card"
                           onClick={() => handleOpenModal(movie)}
+                          onMouseEnter={() => handleMouseEnterCard(movie)}
+                          onMouseLeave={handleMouseLeaveCard}
                         >
-                          <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                          {hoveredMovieId === movie.id && hoveredVideoUrl ? (
+                            <div className="card-preview-video">
+                              <iframe 
+                                src={hoveredVideoUrl} 
+                                title="preview"
+                                allow="autoplay; encrypted-media"
+                                frameBorder="0"
+                              ></iframe>
+                            </div>
+                          ) : (
+                            <img src={getImageUrl(movie.backdrop_path || movie.poster_path)} alt={movie.title || movie.name} />
+                          )}
                           <div className="card-overlay">
                             <p className="card-title">{movie.title || movie.name}</p>
                             <div className="card-meta">
@@ -975,18 +1106,14 @@ function App() {
             </h2>
 
             <div className="form-group">
-              <label className="form-label">Connection Status</label>
-              <div className="settings-info-box" style={{ backgroundColor: isLiveMode ? 'rgba(70, 211, 105, 0.05)' : 'rgba(255, 152, 0, 0.05)', borderColor: isLiveMode ? 'rgba(70, 211, 105, 0.2)' : 'rgba(255, 152, 0, 0.2)' }}>
-                <p>
-                  <strong>Mode:</strong> {isLiveMode ? 'Live Mode (API Server)' : 'Demo Mode (Mock Catalog)'}
-                </p>
-                <p style={{ marginTop: '6px', fontSize: '12px', color: '#aaaaaa' }}>
-                  {isLiveMode 
-                    ? 'Successfully connected to backend API server. Real-time movie metadata and streaming links are active.' 
-                    : 'Backend API server offline or key is missing. Showing cached popular titles with working direct links.'
-                  }
-                </p>
-              </div>
+              <label className="form-label">TMDB API Key (v3) or Access Token (v4)</label>
+              <input 
+                type="password" 
+                className="form-input" 
+                placeholder="Paste your TMDB key/token here"
+                value={tempApiKey}
+                onChange={(e) => setTempApiKey(e.target.value)}
+              />
             </div>
 
             <div className="form-group">
@@ -1007,11 +1134,20 @@ function App() {
               </select>
             </div>
 
+            <div className="settings-info-box">
+              <p>
+                <strong>Need a key?</strong> Go to <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'white' }}>themoviedb.org</a> to get a free API Key. 
+              </p>
+              <p style={{ marginTop: '8px' }}>
+                Leave empty and click "Save" to run in <strong>Demo Mode</strong> with local mock movie links.
+              </p>
+            </div>
+
             <div className="settings-buttons">
               <button className="btn-cancel" onClick={() => setShowSettings(false)}>
-                Close
+                Cancel
               </button>
-              <button className="btn-save" onClick={() => handleSaveSettings(region)}>
+              <button className="btn-save" onClick={() => handleSaveSettings(tempApiKey.trim(), region)}>
                 Save Changes
               </button>
             </div>

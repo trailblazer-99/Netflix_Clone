@@ -13,10 +13,10 @@ app.use(express.json());
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 // Helper to verify key presence and query TMDB
-const fetchFromTMDB = async (path, queryParams = {}) => {
-  const token = process.env.TMDB_API_KEY;
+const fetchFromTMDB = async (path, queryParams = {}, requestHeaders = {}) => {
+  const token = requestHeaders['x-tmdb-key'] || process.env.TMDB_API_KEY;
   if (!token) {
-    throw new Error('TMDB_API_KEY is not configured on the server.');
+    throw new Error('TMDB_API_KEY is not configured on the server and X-TMDB-Key header is missing.');
   }
 
   const isV4 = token.length > 50 && token.startsWith('ey');
@@ -50,16 +50,18 @@ const fetchFromTMDB = async (path, queryParams = {}) => {
 
 // Status endpoint to check if the server is up and TMDB is configured
 app.get('/api/status', (req, res) => {
+  const serverKeyConfigured = !!process.env.TMDB_API_KEY;
+  const clientKeyProvided = !!req.headers['x-tmdb-key'];
   res.json({
     status: 'online',
-    tmdbConfigured: !!process.env.TMDB_API_KEY
+    tmdbConfigured: serverKeyConfigured || clientKeyProvided
   });
 });
 
 // Trending movies/shows
 app.get('/api/trending', async (req, res) => {
   try {
-    const data = await fetchFromTMDB('/trending/all/week');
+    const data = await fetchFromTMDB('/trending/all/week', {}, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -69,7 +71,7 @@ app.get('/api/trending', async (req, res) => {
 // Top rated movies
 app.get('/api/top-rated', async (req, res) => {
   try {
-    const data = await fetchFromTMDB('/movie/top_rated');
+    const data = await fetchFromTMDB('/movie/top_rated', {}, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -79,7 +81,7 @@ app.get('/api/top-rated', async (req, res) => {
 // Discover movies with filters (genres, etc.)
 app.get('/api/discover', async (req, res) => {
   try {
-    const data = await fetchFromTMDB('/discover/movie', req.query);
+    const data = await fetchFromTMDB('/discover/movie', req.query, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -89,7 +91,7 @@ app.get('/api/discover', async (req, res) => {
 // Search movies/tv/people
 app.get('/api/search', async (req, res) => {
   try {
-    const data = await fetchFromTMDB('/search/multi', req.query);
+    const data = await fetchFromTMDB('/search/multi', req.query, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -100,7 +102,7 @@ app.get('/api/search', async (req, res) => {
 app.get('/api/media/:type/:id', async (req, res) => {
   const { type, id } = req.params;
   try {
-    const data = await fetchFromTMDB(`/${type}/${id}`);
+    const data = await fetchFromTMDB(`/${type}/${id}`, {}, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -111,7 +113,7 @@ app.get('/api/media/:type/:id', async (req, res) => {
 app.get('/api/media/:type/:id/providers', async (req, res) => {
   const { type, id } = req.params;
   try {
-    const data = await fetchFromTMDB(`/${type}/${id}/watch/providers`);
+    const data = await fetchFromTMDB(`/${type}/${id}/watch/providers`, {}, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -122,7 +124,7 @@ app.get('/api/media/:type/:id/providers', async (req, res) => {
 app.get('/api/media/:type/:id/credits', async (req, res) => {
   const { type, id } = req.params;
   try {
-    const data = await fetchFromTMDB(`/${type}/${id}/credits`);
+    const data = await fetchFromTMDB(`/${type}/${id}/credits`, {}, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -133,7 +135,7 @@ app.get('/api/media/:type/:id/credits', async (req, res) => {
 app.get('/api/media/:type/:id/videos', async (req, res) => {
   const { type, id } = req.params;
   try {
-    const data = await fetchFromTMDB(`/${type}/${id}/videos`);
+    const data = await fetchFromTMDB(`/${type}/${id}/videos`, {}, req.headers);
     res.json(data);
   } catch (err) {
     res.status(err.message.includes('not configured') ? 503 : 500).json({ error: err.message });
@@ -178,6 +180,6 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Express proxy server running at http://localhost:${PORT}`);
   if (!process.env.TMDB_API_KEY) {
-    console.warn('⚠️ WARNING: TMDB_API_KEY environment variable is not configured. Server will run in Demo-Fallback mode.');
+    console.warn('⚠️ WARNING: TMDB_API_KEY environment variable is not configured. Server will rely on X-TMDB-Key headers from client.');
   }
 });
